@@ -20,22 +20,53 @@ const initial = {
   bothAppear: "",
   propertySummary: "",
   debtsSummary: "",
-  nameRestoration: "",
+  nameRestoration: ""
 };
 
 export default function HillsboroughSimplifiedDissolution() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(initial);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
 
   const update = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
   const next = () => setStep((s) => s + 1);
   const back = () => setStep((s) => s - 1);
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
-    // Later: send to backend, Stripe, PDF generator
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/dissolution-simplified-hillsborough", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to generate PDF");
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "DocuDocket_Simplified_Dissolution_Hillsborough.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setSubmitted(true);
+    } catch (err) {
+      console.error(err);
+      setError("There was a problem generating your packet. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -46,14 +77,13 @@ export default function HillsboroughSimplifiedDissolution() {
         </Link>
         <h1>Simplified Dissolution of Marriage – Hillsborough County</h1>
         <p>
-          This flow is for couples who qualify for Florida&apos;s Simplified
+          Use this guided flow if you both qualify for Florida&apos;s Simplified
           Dissolution procedure and are filing in Hillsborough County.
         </p>
         <p className="fine-print">
-          Requirements include: at least one spouse has lived in Florida for 6
-          months, no minor/dependent children together and not pregnant, full
-          agreement on property/debts, no alimony, and both spouses appear at
-          the final hearing.
+          Requirements (summary): at least one spouse has lived in Florida 6+ months,
+          no minor/dependent children in common and not pregnant, full agreement
+          on property and debts, no alimony, and both spouses will sign and appear.
         </p>
         <p className="fine-print">
           DocuDocket is not a law firm and does not provide legal advice.
@@ -64,7 +94,7 @@ export default function HillsboroughSimplifiedDissolution() {
         <form onSubmit={onSubmit}>
           {step === 1 && (
             <div className="card">
-              <h2>Step 1 of 4 – Check the basics</h2>
+              <h2>Step 1 of 4 – Confirm eligibility</h2>
 
               <label>
                 Has either spouse lived in Florida for at least 6 months?
@@ -80,7 +110,7 @@ export default function HillsboroughSimplifiedDissolution() {
               </select>
 
               <label>
-                No minor or dependent children in common and no pregnancy?
+                No minor/dependent children in common and not pregnant?
               </label>
               <select
                 value={form.noKidsNoPregnancy}
@@ -184,7 +214,7 @@ export default function HillsboroughSimplifiedDissolution() {
                 required
               />
 
-              <label>Spouse A email (for notices)</label>
+              <label>Spouse A email</label>
               <input
                 type="email"
                 value={form.emailA}
@@ -192,7 +222,7 @@ export default function HillsboroughSimplifiedDissolution() {
                 required
               />
 
-              <label>Spouse B email (for notices)</label>
+              <label>Spouse B email</label>
               <input
                 type="email"
                 value={form.emailB}
@@ -213,7 +243,7 @@ export default function HillsboroughSimplifiedDissolution() {
 
           {step === 3 && (
             <div className="card">
-              <h2>Step 3 of 4 – Marriage details & agreement</h2>
+              <h2>Step 3 of 4 – Marriage & agreement details</h2>
 
               <label>Date of marriage</label>
               <input
@@ -233,7 +263,7 @@ export default function HillsboroughSimplifiedDissolution() {
               <label>Property agreement summary</label>
               <textarea
                 rows={3}
-                placeholder="Briefly describe who keeps what (home, cars, accounts, etc.)."
+                placeholder="Who keeps what (home, vehicles, accounts, etc.)?"
                 value={form.propertySummary}
                 onChange={(e) =>
                   update("propertySummary", e.target.value)
@@ -244,14 +274,16 @@ export default function HillsboroughSimplifiedDissolution() {
               <label>Debts agreement summary</label>
               <textarea
                 rows={3}
-                placeholder="Briefly describe who is responsible for which debts."
+                placeholder="Who is responsible for which debts?"
                 value={form.debtsSummary}
-                onChange={(e) => update("debtsSummary", e.target.value)}
+                onChange={(e) =>
+                  update("debtsSummary", e.target.value)
+                }
                 required
               />
 
               <label>
-                Name restoration (optional) – list spouse + former name to restore
+                Name restoration (optional) – list spouse & former name to restore
               </label>
               <input
                 placeholder="Example: Spouse A to restore to Jane Smith"
@@ -274,36 +306,25 @@ export default function HillsboroughSimplifiedDissolution() {
 
           {step === 4 && (
             <div className="card">
-              <h2>Step 4 of 4 – Review</h2>
+              <h2>Step 4 of 4 – Generate your packet summary</h2>
               <p>
-                Based on your answers, DocuDocket can prepare a Simplified
-                Dissolution packet for filing in Hillsborough County.
+                When you finish, DocuDocket will generate a PDF summary with
+                the key information for your Simplified Dissolution filing in
+                Hillsborough County.
               </p>
 
-              <pre
-                style={{
-                  background: "#f9fafb",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-{JSON.stringify(form, null, 2)}
-              </pre>
-
-              <p className="fine-print">
-                In production, this step will send your details to our secure
-                backend, collect payment, and generate all required forms
-                (including the Joint Petition and cover sheet).
-              </p>
+              {error && <p className="danger">{error}</p>}
 
               <div style={{ marginTop: 12 }}>
                 <button className="btn btn-light" type="button" onClick={back}>
                   Back
                 </button>
-                <button className="btn btn-dark" type="submit">
-                  Finish (demo)
+                <button
+                  className="btn btn-dark"
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? "Generating..." : "Finish & download PDF"}
                 </button>
               </div>
             </div>
@@ -313,14 +334,11 @@ export default function HillsboroughSimplifiedDissolution() {
 
       {submitted && (
         <div className="card">
-          <h2>Demo complete</h2>
+          <h2>Packet summary downloaded</h2>
           <p>
-            You&apos;ve walked through the core questions for a Simplified
-            Dissolution of Marriage in Hillsborough County.
-          </p>
-          <p>
-            Next implementation steps: save this as a &quot;matter&quot;, run
-            Stripe Checkout, and generate your filing packet.
+            A PDF summary has been generated based on your answers. In the full
+            DocuDocket product, this would become a complete, clerk-ready packet
+            and be saved to your account.
           </p>
           <Link href="/" className="cta-secondary">
             ← Back to home
