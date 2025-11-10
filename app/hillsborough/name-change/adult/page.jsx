@@ -33,7 +33,9 @@ const initialForm = {
 export default function HillsboroughAdultNameChange() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(initialForm);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
 
   const update = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -42,10 +44,39 @@ export default function HillsboroughAdultNameChange() {
   const next = () => setStep((s) => s + 1);
   const back = () => setStep((s) => s - 1);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
-    // Later: send to API route that saves data and triggers Stripe checkout + PDF build
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/name-change-hillsborough", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to generate PDF");
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "DocuDocket_Adult_Name_Change_Hillsborough.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setSubmitted(true);
+    } catch (err) {
+      console.error(err);
+      setError("There was a problem generating your packet. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -56,13 +87,14 @@ export default function HillsboroughAdultNameChange() {
         </Link>
         <h1>Adult Name Change – Hillsborough County</h1>
         <p>
-          This guided form collects everything needed to prepare your Florida
-          Adult Name Change packet for Hillsborough County (including
-          Florida Supreme Court Forms 12.982(a) &amp; 12.982(b)).
+          Answer these questions to generate a Hillsborough-focused Adult Name
+          Change packet summary. This uses Florida Supreme Court forms
+          12.982(a)/(b) as a reference.
         </p>
         <p className="fine-print">
-          DocuDocket is not a law firm and does not provide legal advice. You are
-          responsible for reviewing your documents.
+          DocuDocket is not a law firm and does not provide legal advice. You
+          are responsible for reviewing your documents and confirming they meet
+          current court requirements.
         </p>
       </div>
 
@@ -123,7 +155,13 @@ export default function HillsboroughAdultNameChange() {
               <h2>Step 2 of 4 – Current & new name</h2>
 
               <label>Current legal name</label>
-              <div style={{ display: "grid", gap: 6, gridTemplateColumns: "1fr 1fr" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 6,
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                }}
+              >
                 <input
                   placeholder="First"
                   value={form.firstName}
@@ -142,14 +180,20 @@ export default function HillsboroughAdultNameChange() {
                   required
                 />
                 <input
-                  placeholder="Suffix (optional)"
+                  placeholder="Suffix"
                   value={form.suffix}
                   onChange={(e) => update("suffix", e.target.value)}
                 />
               </div>
 
               <label>Desired new name</label>
-              <div style={{ display: "grid", gap: 6, gridTemplateColumns: "1fr 1fr" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 6,
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                }}
+              >
                 <input
                   placeholder="First"
                   value={form.newFirstName}
@@ -168,7 +212,7 @@ export default function HillsboroughAdultNameChange() {
                   required
                 />
                 <input
-                  placeholder="Suffix (optional)"
+                  placeholder="Suffix"
                   value={form.newSuffix}
                   onChange={(e) => update("newSuffix", e.target.value)}
                 />
@@ -182,7 +226,9 @@ export default function HillsboroughAdultNameChange() {
                 required
               />
 
-              <div className="step">Residential address (Hillsborough County)</div>
+              <div className="step">
+                Residential address (should be in Hillsborough County)
+              </div>
               <input
                 placeholder="Street address"
                 value={form.address}
@@ -208,7 +254,7 @@ export default function HillsboroughAdultNameChange() {
                 required
               />
 
-              <label>Email (for court notices / e-service)</label>
+              <label>Email (for notices)</label>
               <input
                 type="email"
                 value={form.email}
@@ -235,7 +281,7 @@ export default function HillsboroughAdultNameChange() {
 
           {step === 3 && (
             <div className="card">
-              <h2>Step 3 of 4 – Background questions</h2>
+              <h2>Step 3 of 4 – Background</h2>
 
               <label>Have you ever been convicted of a felony?</label>
               <select
@@ -297,7 +343,7 @@ export default function HillsboroughAdultNameChange() {
               <label>Reason for name change</label>
               <textarea
                 rows={3}
-                placeholder="Explain briefly (e.g. restore family name, consistency with identity, etc.)"
+                placeholder="Brief, honest explanation (e.g. restore prior name, consistency, personal reasons)."
                 value={form.reason}
                 onChange={(e) => update("reason", e.target.value)}
                 required
@@ -316,36 +362,21 @@ export default function HillsboroughAdultNameChange() {
 
           {step === 4 && (
             <div className="card">
-              <h2>Step 4 of 4 – Review & next steps</h2>
+              <h2>Step 4 of 4 – Generate your packet summary</h2>
               <p>
-                This summary shows the key details that will appear in your
-                Hillsborough Adult Name Change packet.
+                When you click finish, DocuDocket will generate a PDF summary
+                with your answers for your Adult Name Change in Hillsborough
+                County.
               </p>
 
-              <pre
-                style={{
-                  background: "#f9fafb",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-{JSON.stringify(form, null, 2)}
-              </pre>
-
-              <p className="fine-print">
-                In the full version, this step will route you to secure payment
-                and generate a court-ready PDF packet you can download
-                immediately.
-              </p>
+              {error && <p className="danger">{error}</p>}
 
               <div style={{ marginTop: 12 }}>
                 <button className="btn btn-light" type="button" onClick={back}>
                   Back
                 </button>
-                <button className="btn btn-dark" type="submit">
-                  Finish (demo)
+                <button className="btn btn-dark" type="submit" disabled={submitting}>
+                  {submitting ? "Generating..." : "Finish & download PDF"}
                 </button>
               </div>
             </div>
@@ -355,14 +386,11 @@ export default function HillsboroughAdultNameChange() {
 
       {submitted && (
         <div className="card">
-          <h2>Demo complete</h2>
+          <h2>Packet summary downloaded</h2>
           <p>
-            You just walked through the DocuDocket Adult Name Change flow for
-            Hillsborough County.
-          </p>
-          <p>
-            Next implementation steps: save this data, charge the user, and
-            generate the official forms from it.
+            A PDF summary has been generated based on your answers. In the full
+            product, this will be expanded into complete, court-ready forms and
+            saved to your DocuDocket account.
           </p>
           <Link href="/" className="cta-secondary">
             ← Back to home
