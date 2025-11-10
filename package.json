@@ -1,5 +1,5 @@
 {
-  "name": "pro-se-docs-mvp-v2",
+  "name": "docudocket",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,8 +11,8 @@
     "next": "14.2.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "pdf-lib": "^1.17.1"
     "@supabase/supabase-js": "^2.48.0",
-    "stripe": "^16.0.0"
+    "stripe": "^16.0.0",
+    "pdf-lib": "^1.17.1"
   }
 }
