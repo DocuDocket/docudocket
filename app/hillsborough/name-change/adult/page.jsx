@@ -27,7 +27,7 @@ const initialForm = {
   hasBankruptcy: "",
   hasJudgments: "",
   isSexOffender: "",
-  pendingCases: "",
+  pendingCases: ""
 };
 
 export default function HillsboroughAdultNameChange() {
@@ -50,15 +50,15 @@ export default function HillsboroughAdultNameChange() {
     setSubmitting(true);
 
     try {
-      // Save this matter (fire-and-forget; if it fails, we still continue)
+      // Save this matter (fire-and-forget; if it fails we still continue)
       fetch("/api/matters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "name-change-hillsborough",
           email: form.email,
-          data: form,
-        }),
+          data: form
+        })
       }).catch((err) => {
         console.error("Failed to save matter", err);
       });
@@ -67,7 +67,7 @@ export default function HillsboroughAdultNameChange() {
       const res = await fetch("/api/name-change-hillsborough", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(form)
       });
 
       if (!res.ok) {
@@ -88,6 +88,34 @@ export default function HillsboroughAdultNameChange() {
     } catch (err) {
       console.error(err);
       setError("There was a problem generating your packet. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startCheckout = async () => {
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productKey: "name-change-hillsborough"
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError("Checkout is not available right now.");
+      }
+    } catch (e) {
+      console.error(e);
+      setError("Error starting checkout. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -149,9 +177,7 @@ export default function HillsboroughAdultNameChange() {
               </label>
               <select
                 value={form.lawfulPurpose}
-                onChange={(e) =>
-                  update("lawfulPurpose", e.target.value)
-                }
+                onChange={(e) => update("lawfulPurpose", e.target.value)}
                 required
               >
                 <option value="">Select</option>
@@ -180,38 +206,30 @@ export default function HillsboroughAdultNameChange() {
                 style={{
                   display: "grid",
                   gap: 6,
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))"
                 }}
               >
                 <input
                   placeholder="First"
                   value={form.firstName}
-                  onChange={(e) =>
-                    update("firstName", e.target.value)
-                  }
+                  onChange={(e) => update("firstName", e.target.value)}
                   required
                 />
                 <input
                   placeholder="Middle"
                   value={form.middleName}
-                  onChange={(e) =>
-                    update("middleName", e.target.value)
-                  }
+                  onChange={(e) => update("middleName", e.target.value)}
                 />
                 <input
                   placeholder="Last"
                   value={form.lastName}
-                  onChange={(e) =>
-                    update("lastName", e.target.value)
-                  }
+                  onChange={(e) => update("lastName", e.target.value)}
                   required
                 />
                 <input
                   placeholder="Suffix"
                   value={form.suffix}
-                  onChange={(e) =>
-                    update("suffix", e.target.value)
-                  }
+                  onChange={(e) => update("suffix", e.target.value)}
                 />
               </div>
 
@@ -220,7 +238,7 @@ export default function HillsboroughAdultNameChange() {
                 style={{
                   display: "grid",
                   gap: 6,
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))"
                 }}
               >
                 <input
@@ -269,25 +287,19 @@ export default function HillsboroughAdultNameChange() {
               <input
                 placeholder="Street address"
                 value={form.address}
-                onChange={(e) =>
-                  update("address", e.target.value)
-                }
+                onChange={(e) => update("address", e.target.value)}
                 required
               />
               <input
                 placeholder="City"
                 value={form.city}
-                onChange={(e) =>
-                  update("city", e.target.value)
-                }
+                onChange={(e) => update("city", e.target.value)}
                 required
               />
               <input
                 placeholder="State"
                 value={form.state}
-                onChange={(e) =>
-                  update("state", e.target.value)
-                }
+                onChange={(e) => update("state", e.target.value)}
                 required
               />
               <input
@@ -301,18 +313,14 @@ export default function HillsboroughAdultNameChange() {
               <input
                 type="email"
                 value={form.email}
-                onChange={(e) =>
-                  update("email", e.target.value)
-                }
+                onChange={(e) => update("email", e.target.value)}
                 required
               />
 
               <label>Phone</label>
               <input
                 value={form.phone}
-                onChange={(e) =>
-                  update("phone", e.target.value)
-                }
+                onChange={(e) => update("phone", e.target.value)}
               />
 
               <div style={{ marginTop: 12 }}>
@@ -341,9 +349,7 @@ export default function HillsboroughAdultNameChange() {
               <label>Have you ever been convicted of a felony?</label>
               <select
                 value={form.hasFelony}
-                onChange={(e) =>
-                  update("hasFelony", e.target.value)
-                }
+                onChange={(e) => update("hasFelony", e.target.value)}
                 required
               >
                 <option value="">Select</option>
@@ -410,9 +416,7 @@ export default function HillsboroughAdultNameChange() {
                 rows={3}
                 placeholder="Brief, honest explanation (e.g. restore prior name, consistency, personal reasons)."
                 value={form.reason}
-                onChange={(e) =>
-                  update("reason", e.target.value)
-                }
+                onChange={(e) => update("reason", e.target.value)}
                 required
               />
 
@@ -439,18 +443,20 @@ export default function HillsboroughAdultNameChange() {
             <div className="card">
               <h2>Step 4 of 4 – Generate your packet summary</h2>
               <p>
-                When you click finish, DocuDocket will generate a PDF summary
-                with your answers for your Adult Name Change in Hillsborough
-                County.
+                Option 1: download a PDF summary of your answers (demo mode).
+                Option 2: continue to secure checkout in test mode.
               </p>
 
-              {error && (
-                <p className="danger">
-                  {error}
-                </p>
-              )}
+              {error && <p className="danger">{error}</p>}
 
-              <div style={{ marginTop: 12 }}>
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap"
+                }}
+              >
                 <button
                   className="btn btn-light"
                   type="button"
@@ -465,7 +471,17 @@ export default function HillsboroughAdultNameChange() {
                 >
                   {submitting
                     ? "Generating..."
-                    : "Finish & download PDF"}
+                    : "Finish & download PDF (demo)"}
+                </button>
+                <button
+                  className="btn btn-light"
+                  type="button"
+                  onClick={startCheckout}
+                  disabled={submitting}
+                >
+                  {submitting
+                    ? "Redirecting..."
+                    : "Continue to secure checkout"}
                 </button>
               </div>
             </div>
