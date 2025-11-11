@@ -5,11 +5,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const PRODUCTS = {
   "name-change-hillsborough": {
     name: "Adult Name Change Packet – Hillsborough County",
-    amount: 7900 // $79.00 in cents
+    amount: 7900 // $79.00
   },
   "simplified-dissolution-hillsborough": {
     name: "Simplified Dissolution Packet – Hillsborough County",
-    amount: 9900 // $99.00 in cents
+    amount: 9900 // $99.00
   }
 };
 
@@ -29,7 +29,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { productKey, successUrl, cancelUrl } = body;
+    const { productKey, matterId, successUrl, cancelUrl } = body;
 
     const product = PRODUCTS[productKey];
 
@@ -60,10 +60,16 @@ export async function POST(request) {
       ],
       success_url:
         successUrl ||
-        "https://docudocket.com/checkout/success?product=" + productKey,
+        `https://docudocket.com/checkout/success?product=${encodeURIComponent(
+          productKey
+        )}${matterId ? `&matterId=${encodeURIComponent(matterId)}` : ""}`,
       cancel_url:
-        cancelUrl ||
-        "https://docudocket.com/checkout/cancel"
+        cancelUrl || "https://docudocket.com/checkout/cancel",
+      metadata: matterId
+        ? {
+            matterId
+          }
+        : {}
     });
 
     return new Response(
