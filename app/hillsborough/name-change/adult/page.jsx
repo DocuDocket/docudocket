@@ -93,16 +93,32 @@ export default function HillsboroughAdultNameChange() {
     }
   };
 
-  const startCheckout = async () => {
+   const startCheckout = async () => {
     setError("");
     setSubmitting(true);
 
     try {
+      // 1) Create a matter for this flow
+      const matterRes = await fetch("/api/matters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "name-change-hillsborough",
+          email: form.email,
+          data: form
+        })
+      });
+
+      const matterJson = await matterRes.json();
+      const matterId = matterJson.id;
+
+      // 2) Start Stripe Checkout tied to this matter
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productKey: "name-change-hillsborough"
+          productKey: "name-change-hillsborough",
+          matterId
         })
       });
 
