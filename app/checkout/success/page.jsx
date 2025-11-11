@@ -1,24 +1,35 @@
 import Link from "next/link";
 
-export default function CheckoutSuccessPage() {
+export default function CheckoutSuccessPage({ searchParams }) {
+  const matterId = searchParams?.matterId;
+  const product = searchParams?.product;
+
   return (
     <main>
       <div className="card">
-        <h1>Payment received</h1>
+        <h1>Payment received (test mode)</h1>
+        {product && (
+          <p>
+            Packet: <strong>{product}</strong>
+          </p>
+        )}
+        {matterId && (
+          <p>
+            Reference ID for your submission:{" "}
+            <code>{matterId}</code>
+          </p>
+        )}
         <p>
-          Thank you for using DocuDocket. Your payment was successful.
-        </p>
-        <p>
-          In the full version, this page will:
+          In the full version of DocuDocket, this page will:
         </p>
         <ul>
-          <li>Confirm your matter details</li>
-          <li>Provide direct links to your generated packet PDFs</li>
-          <li>Email you copies of your documents and filing steps</li>
+          <li>Confirm your payment</li>
+          <li>Attach your completed forms to this reference ID</li>
+          <li>Email you secure links to download your packet</li>
         </ul>
         <p className="fine-print">
-          For now, this is a test environment. Do not rely on this demo for
-          actual court filings.
+          This environment is for testing and demos only. Do not rely on these
+          outputs for real court filings yet.
         </p>
         <Link href="/" className="cta-secondary">
           ← Back to home
