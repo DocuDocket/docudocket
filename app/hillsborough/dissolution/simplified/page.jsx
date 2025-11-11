@@ -83,16 +83,32 @@ export default function HillsboroughSimplifiedDissolution() {
     }
   };
 
-  const startCheckout = async () => {
+   const startCheckout = async () => {
     setError("");
     setSubmitting(true);
 
     try {
+      // 1) Create a matter for this flow
+      const matterRes = await fetch("/api/matters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "simplified-dissolution-hillsborough",
+          email: form.emailA || form.emailB,
+          data: form
+        })
+      });
+
+      const matterJson = await matterRes.json();
+      const matterId = matterJson.id;
+
+      // 2) Start Stripe Checkout tied to this matter
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productKey: "simplified-dissolution-hillsborough"
+          productKey: "simplified-dissolution-hillsborough",
+          matterId
         })
       });
 
