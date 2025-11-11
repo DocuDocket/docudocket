@@ -83,6 +83,34 @@ export default function HillsboroughSimplifiedDissolution() {
     }
   };
 
+  const startCheckout = async () => {
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productKey: "simplified-dissolution-hillsborough"
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError("Checkout is not available right now.");
+      }
+    } catch (e) {
+      console.error(e);
+      setError("Error starting checkout. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <main>
       <div className="card">
@@ -313,19 +341,26 @@ export default function HillsboroughSimplifiedDissolution() {
             <div className="card">
               <h2>Step 4 of 4 – Generate your packet summary</h2>
               <p>
-                When you finish, DocuDocket will generate a PDF summary with
-                the key information for your Simplified Dissolution filing in
-                Hillsborough County.
+                Option 1: download a PDF summary of your answers (demo mode).
+                Option 2: continue to secure checkout in test mode.
               </p>
 
               {error && <p className="danger">{error}</p>}
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="btn btn-light" type="button" onClick={back}>
                   Back
                 </button>
                 <button className="btn btn-dark" type="submit" disabled={submitting}>
-                  {submitting ? "Generating..." : "Finish & download PDF"}
+                  {submitting ? "Generating..." : "Finish & download PDF (demo)"}
+                </button>
+                <button
+                  className="btn btn-light"
+                  type="button"
+                  onClick={startCheckout}
+                  disabled={submitting}
+                >
+                  {submitting ? "Redirecting..." : "Continue to secure checkout"}
                 </button>
               </div>
             </div>
