@@ -602,3 +602,10 @@ code {
 .footer-links a:hover {
   color: #111827;
 }
+
+.logo-img {
+  width: 28px;
+  height: 28px;
+  display: inline-block;
+  border-radius: 6px; /* optional */
+}
