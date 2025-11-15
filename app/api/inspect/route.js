@@ -1,39 +1,49 @@
 import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
-// GET /api/pdf/inspect?path=/templates/hillsborough/name-change-adult/12-982a-petition.pdf
+export const runtime = "nodejs";
+
+// GET /api/pdf/inspect?path=templates/hillsborough/name-change-adult/12-982a-petition.pdf
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const path = searchParams.get("path");
-    if (!path) {
+    let rel = searchParams.get("path");
+    if (!rel) {
       return NextResponse.json(
-        { error: "Missing ?path=/templates/.../file.pdf" },
+        { error: "Missing ?path=templates/.../file.pdf" },
         { status: 400 }
       );
     }
 
-    const res = await fetch(path);
-    if (!res.ok) throw new Error(`Could not load ${path}`);
-    const ab = await res.arrayBuffer();
+    // Normalize and **restrict** to the templates folder
+    rel = rel.replace(/^\/+/, ""); // strip leading slash
+    const allowedRoot = path.join(process.cwd(), "templates");
+    const abs = path.join(process.cwd(), rel);
 
-    const pdf = await PDFDocument.load(ab);
+    if (!abs.startsWith(allowedRoot)) {
+      return NextResponse.json({ error: "Path not allowed" }, { status: 400 });
+    }
+
+    const buf = await fs.readFile(abs);
+    const pdf = await PDFDocument.load(buf);
     const form = pdf.getForm?.();
+
     if (!form) {
       return NextResponse.json({
-        path,
+        path: rel,
         fields: [],
         note: "No AcroForm found (non-fillable). Use overlay mode."
       });
     }
 
-    // Collect names & types
-    const fields = form.getFields().map((f) => {
-      const type = f.constructor?.name || "Unknown";
-      return { name: f.getName(), type };
-    });
+    const fields = form.getFields().map((f) => ({
+      name: f.getName(),
+      type: f.constructor?.name || "Unknown"
+    }));
 
-    return NextResponse.json({ path, fields });
+    return NextResponse.json({ path: rel, fields });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Inspect failed" }, { status: 500 });
