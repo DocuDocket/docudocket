@@ -40,8 +40,8 @@ export default function RootLayout({ children }) {
               <Image
                 src="/brand/docudocket-badge.png"
                 alt="DocuDocket shield logo"
-                width={28}
-                height={28}
+                width={40}
+                height={40}
                 className="logo-img"
                 priority
               />
