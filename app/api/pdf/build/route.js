@@ -8,17 +8,14 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { PACKETS } from "@/lib/forms";
 
-/* ---------- Supabase ---------- */
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-/* ---------- helpers ---------- */
 const readTemplateBytes = async (relPath) => {
-  // relPath like "templates/hillsborough/.../file.pdf"
   const abs = path.join(process.cwd(), relPath.replace(/^\/+/, ""));
-  return await fs.readFile(abs);
+  return fs.readFile(abs);
 };
 
 async function fillForm(baseBytes, fieldMap, data) {
@@ -29,44 +26,33 @@ async function fillForm(baseBytes, fieldMap, data) {
     for (const [fieldName, mapping] of Object.entries(fieldMap || {})) {
       const value = typeof mapping === "function" ? mapping(data) : data?.[mapping];
 
-      // Try checkbox
+      // checkbox
       try {
         const cb = form.getCheckBox(fieldName);
-        if (cb) {
-          if (value) cb.check();
-          else cb.uncheck();
-          continue;
-        }
+        if (cb) { value ? cb.check() : cb.uncheck(); continue; }
       } catch {}
 
-      // Try text field
+      // text
       try {
         const tf = form.getTextField(fieldName);
-        if (tf) {
-          if (value != null && value !== "") tf.setText(String(value));
-          continue;
-        }
+        if (tf) { if (value != null && value !== "") tf.setText(String(value)); continue; }
       } catch {}
 
-      // Try radio group
+      // radio
       try {
         const rg = form.getRadioGroup(fieldName);
-        if (rg && value) {
-          rg.select(String(value));
-          continue;
-        }
+        if (rg && value) { rg.select(String(value)); continue; }
       } catch {}
     }
-
     try { form.flatten(); } catch {}
   }
 
-  return await pdf.save();
+  return pdf.save();
 }
 
 async function addCoverPage(finalDoc, data, productTitle) {
   const cover = await PDFDocument.create();
-  const page = cover.addPage([612, 792]); // Letter
+  const page = cover.addPage([612, 792]);
   const font = await cover.embedFont(StandardFonts.HelveticaBold);
   const font2 = await cover.embedFont(StandardFonts.Helvetica);
 
@@ -79,32 +65,32 @@ async function addCoverPage(finalDoc, data, productTitle) {
   if (who) page.drawText(`Filer: ${who}`, { x: 56, y: 675, size: 11, font: font2 });
 
   page.drawText("Checklist:", { x: 56, y: 640, size: 12, font });
-  const bullets = [
-    "Bring government ID and required filing fees.",
-    "If required, fingerprints/FDLE completed.",
-    "Sign notarized pages in front of a notary.",
-    "Leave Case No. blank until assigned by Clerk."
-  ];
-  bullets.forEach((b, i) => {
-    page.drawText(`• ${b}`, { x: 56, y: 620 - i * 16, size: 11, font: font2 });
-  });
+  ["Bring government ID and required filing fees.",
+   "If required, fingerprints/FDLE completed.",
+   "Sign notarized pages in front of a notary.",
+   "Leave Case No. blank until assigned by Clerk."]
+   .forEach((b, i) => page.drawText(`• ${b}`, { x: 56, y: 620 - i * 16, size: 11, font: font2 }));
 
   const [coverPage] = await finalDoc.copyPages(cover, [0]);
   finalDoc.addPage(coverPage);
 }
 
-/* ---------- POST handler ---------- */
 export async function POST(req) {
   try {
-    const { productKey, data, matterId } = await req.json();
-    const cfg = PACKETS[productKey];
-    if (!cfg) {
-      return NextResponse.json({ error: "Unknown packet" }, { status: 400 });
+    const { productKey, data, matterId } = await req.json().catch(() => ({}));
+    if (!productKey) {
+      return NextResponse.json({ error: "Missing productKey" }, { status: 400 });
     }
 
-    // --- test bypass so you can generate without payment during dev ---
-    // Set NEXT_PUBLIC_DOCUDOCKET_ALLOW_TEST=1 in Vercel env,
-    // then call with matterId "TEST" or "TEST-BYPASS".
+    const cfg = PACKETS[productKey];
+    if (!cfg) {
+      return NextResponse.json({ error: `Unknown packet: ${productKey}` }, { status: 400 });
+    }
+    if (!Array.isArray(cfg.files) || cfg.files.length === 0) {
+      return NextResponse.json({ error: "Packet has no files" }, { status: 400 });
+    }
+
+    // test bypass so you can build without payment during dev
     const BYPASS =
       process.env.NEXT_PUBLIC_DOCUDOCKET_ALLOW_TEST === "1" &&
       (matterId === "TEST" || matterId === "TEST-BYPASS");
@@ -118,38 +104,72 @@ export async function POST(req) {
         .select("paid")
         .eq("id", matterId)
         .limit(1);
-      if (error) throw error;
+      if (error) return NextResponse.json({ error: `Supabase error: ${error.message}` }, { status: 500 });
       if (!matters?.[0]?.paid) {
         return NextResponse.json({ error: "Payment required" }, { status: 403 });
       }
     }
 
-    // Build final merged PDF
     const finalDoc = await PDFDocument.create();
 
-    // 1) Add a simple cover
-    await addCoverPage(finalDoc, data, cfg.title);
-
-    // 2) Fill + merge each file in order
-    for (const file of cfg.files) {
-      const baseBytes = await readTemplateBytes(file.path);
-      const mapping = cfg.fields?.[file.id];
-      const outBytes = mapping
-        ? await fillForm(baseBytes, mapping, data)
-        : baseBytes;
-
-      const src = await PDFDocument.load(outBytes);
-      const pages = await finalDoc.copyPages(src, src.getPageIndices());
-      pages.forEach((p) => finalDoc.addPage(p));
+    // Add cover page (make non-fatal if it throws)
+    try { await addCoverPage(finalDoc, data || {}, cfg.title || "DocuDocket Packet"); }
+    catch (e) {
+      console.error("COVER_ERROR:", e?.message);
+      // continue anyway
     }
 
-    // 3) Footer page numbers
-    const pages = finalDoc.getPages();
-    const font = await finalDoc.embedFont(StandardFonts.Helvetica);
-    pages.forEach((p, i) => {
-      const { width } = p.getSize();
-      p.drawText(`${i + 1} / ${pages.length}`, { x: width - 70, y: 18, size: 9, font });
-    });
+    for (const file of cfg.files) {
+      let baseBytes;
+      try {
+        baseBytes = await readTemplateBytes(file.path);
+      } catch (e) {
+        console.error("TEMPLATE_READ_ERROR:", file.path, e?.message);
+        return NextResponse.json(
+          { error: `Template not found or unreadable: ${file.path}` },
+          { status: 500 }
+        );
+      }
+
+      let outBytes = baseBytes;
+      const mapping = cfg.fields?.[file.id];
+      if (mapping) {
+        try {
+          outBytes = await fillForm(baseBytes, mapping, data || {});
+        } catch (e) {
+          console.error("FILL_ERROR:", file.id, e?.message);
+          return NextResponse.json(
+            { error: `Failed filling fields for ${file.id}: ${e?.message || "unknown"}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      try {
+        const src = await PDFDocument.load(outBytes);
+        const pages = await finalDoc.copyPages(src, src.getPageIndices());
+        pages.forEach((p) => finalDoc.addPage(p));
+      } catch (e) {
+        console.error("MERGE_ERROR:", file.id, e?.message);
+        return NextResponse.json(
+          { error: `Failed merging ${file.id}: ${e?.message || "unknown"}` },
+          { status: 500 }
+        );
+      }
+    }
+
+    // page numbers
+    try {
+      const font = await finalDoc.embedFont(StandardFonts.Helvetica);
+      const pages = finalDoc.getPages();
+      pages.forEach((p, i) => {
+        const { width } = p.getSize();
+        p.drawText(`${i + 1} / ${pages.length}`, { x: width - 70, y: 18, size: 9, font });
+      });
+    } catch (e) {
+      console.error("FOOTER_ERROR:", e?.message);
+      // non-fatal
+    }
 
     const bytes = await finalDoc.save();
     return new Response(Buffer.from(bytes), {
@@ -160,7 +180,7 @@ export async function POST(req) {
       }
     });
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: "Failed to build packet" }, { status: 500 });
+    console.error("BUILD_FATAL:", e?.message, e?.stack);
+    return NextResponse.json({ error: `Failed to build packet: ${e?.message || "unknown"}` }, { status: 500 });
   }
 }
