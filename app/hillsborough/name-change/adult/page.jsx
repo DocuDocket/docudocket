@@ -44,13 +44,14 @@ export default function HillsboroughAdultNameChange() {
   const next = () => setStep((s) => s + 1);
   const back = () => setStep((s) => s - 1);
 
+  // DEMO PDF flow (existing behavior)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
     try {
-      // Save this matter (fire-and-forget; if it fails we still continue)
+      // Save this matter (fire-and-forget; demo-only)
       fetch("/api/matters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -63,7 +64,7 @@ export default function HillsboroughAdultNameChange() {
         console.error("Failed to save matter", err);
       });
 
-      // Generate PDF summary
+      // Generate PDF summary (demo)
       const res = await fetch("/api/name-change-hillsborough", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -93,24 +94,37 @@ export default function HillsboroughAdultNameChange() {
     }
   };
 
-   const startCheckout = async () => {
+  // LIVE CHECKOUT FLOW – wired to Supabase matters + Stripe
+  const startCheckout = async () => {
     setError("");
     setSubmitting(true);
 
     try {
-      // 1) Create a matter for this flow
-      const matterRes = await fetch("/api/matters", {
+      // 1) Create a matter in the new `matters` table
+      const matterRes = await fetch("/api/matters/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "name-change-hillsborough",
-          email: form.email,
+          productKey: "name-change-hillsborough",
           data: form
         })
       });
 
       const matterJson = await matterRes.json();
-      const matterId = matterJson.id;
+
+      if (!matterRes.ok) {
+        console.error("Matter creation error:", matterJson);
+        setError("Sorry, we couldn’t save your information. Please try again.");
+        return;
+      }
+
+      const { matterId } = matterJson;
+
+      if (!matterId) {
+        console.error("No matterId returned:", matterJson);
+        setError("Something went wrong saving your matter. Please try again.");
+        return;
+      }
 
       // 2) Start Stripe Checkout tied to this matter
       const res = await fetch("/api/checkout", {
@@ -118,16 +132,19 @@ export default function HillsboroughAdultNameChange() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productKey: "name-change-hillsborough",
+          pricingTier: "diy", // identify this as the DIY Docs tier
           matterId
         })
       });
 
       const data = await res.json();
 
-      if (data.url) {
+      if (res.ok && data.url) {
+        // 3) Redirect to Stripe Checkout
         window.location.href = data.url;
       } else {
-        setError("Checkout is not available right now.");
+        console.error("Checkout error:", data);
+        setError("Checkout is not available right now. Please try again.");
       }
     } catch (e) {
       console.error(e);
