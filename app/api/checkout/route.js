@@ -1,92 +1,78 @@
+// app/api/checkout/route.js
+export const runtime = "nodejs";
+
+import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const PRODUCTS = {
-  "name-change-hillsborough": {
-    name: "Adult Name Change Packet – Hillsborough County",
-    amount: 7900 // $79.00
-  },
-  "simplified-dissolution-hillsborough": {
-    name: "Simplified Dissolution Packet – Hillsborough County",
-    amount: 9900 // $99.00
-  }
-};
+// 🔴 TODO: put your real Stripe Price ID here for the DIY Adult Name Change
+// You can find this in Stripe Dashboard → Products → click your product → Prices → "price_xxx"
+const PRICE_NAME_CHANGE_DIY =
+  process.env.STRIPE_PRICE_NAME_CHANGE_DIY || "price_xxxxxxxxxxxxx";
 
-export async function POST(request) {
+export async function POST(req) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "Stripe is not configured. Set STRIPE_SECRET_KEY in your environment."
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        }
+    const body = await req.json();
+    const { productKey, matterId, pricingTier } = body || {};
+
+    if (!matterId) {
+      return NextResponse.json(
+        { error: "Missing matterId" },
+        { status: 400 }
       );
     }
 
-    const body = await request.json();
-    const { productKey, matterId, successUrl, cancelUrl } = body;
-
-    const product = PRODUCTS[productKey];
-
-    if (!product) {
-      return new Response(
-        JSON.stringify({ error: "Invalid product key" }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        }
+    if (!productKey) {
+      return NextResponse.json(
+        { error: "Missing productKey" },
+        { status: 400 }
       );
     }
+
+    // Decide which Stripe price to use, based on product + tier
+    let priceId;
+
+    if (
+      productKey === "name-change-hillsborough" &&
+      (pricingTier === "diy" || !pricingTier)
+    ) {
+      priceId = PRICE_NAME_CHANGE_DIY;
+    } else {
+      return NextResponse.json(
+        { error: "Unsupported product or pricing tier" },
+        { status: 400 }
+      );
+    }
+
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL || "https://docudocket.com";
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
       line_items: [
         {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: product.name
-            },
-            unit_amount: product.amount
-          },
+          price: priceId,
           quantity: 1
         }
       ],
-      success_url:
-        successUrl ||
-        `https://docudocket.com/checkout/success?product=${encodeURIComponent(
-          productKey
-        )}${matterId ? `&matterId=${encodeURIComponent(matterId)}` : ""}`,
-      cancel_url:
-        cancelUrl || "https://docudocket.com/checkout/cancel",
-      metadata: matterId
-        ? {
-            matterId
-          }
-        : {}
+      success_url: `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/hillsborough/name-change/adult`,
+
+      // 🔹 THIS is the important part: we carry matterId into Stripe metadata
+      metadata: {
+        matterId,
+        productKey,
+        pricingTier: pricingTier || "diy"
+      }
     });
 
-    return new Response(
-      JSON.stringify({ url: session.url }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      }
-    );
+    return NextResponse.json({ url: session.url });
   } catch (err) {
-    console.error(err);
-    return new Response(
-      JSON.stringify({ error: "Failed to create Stripe Checkout session" }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      }
+    console.error("CHECKOUT_ERROR:", err);
+    return NextResponse.json(
+      { error: "Failed to create checkout session" },
+      { status: 500 }
     );
   }
 }
