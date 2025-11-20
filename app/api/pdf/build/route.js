@@ -13,11 +13,13 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// helper: read template bytes from disk
 const readTemplateBytes = async (relPath) => {
   const abs = path.join(process.cwd(), relPath.replace(/^\/+/, ""));
   return fs.readFile(abs);
 };
 
+// helper: fill a form’s fields using pdf-lib and our mapping
 async function fillForm(baseBytes, fieldMap, data) {
   const pdf = await PDFDocument.load(baseBytes);
   const form = pdf.getForm?.();
@@ -29,22 +31,36 @@ async function fillForm(baseBytes, fieldMap, data) {
       // checkbox
       try {
         const cb = form.getCheckBox(fieldName);
-        if (cb) { value ? cb.check() : cb.uncheck(); continue; }
+        if (cb) {
+          value ? cb.check() : cb.uncheck();
+          continue;
+        }
       } catch {}
 
-      // text
+      // text field
       try {
         const tf = form.getTextField(fieldName);
-        if (tf) { if (value != null && value !== "") tf.setText(String(value)); continue; }
+        if (tf) {
+          if (value != null && value !== "") {
+            tf.setText(String(value));
+          }
+          continue;
+        }
       } catch {}
 
-      // radio
+      // radio group
       try {
         const rg = form.getRadioGroup(fieldName);
-        if (rg && value) { rg.select(String(value)); continue; }
+        if (rg && value) {
+          rg.select(String(value));
+          continue;
+        }
       } catch {}
     }
-    try { form.flatten(); } catch {}
+
+    try {
+      form.flatten();
+    } catch {}
   }
 
   return pdf.save();
@@ -62,14 +78,19 @@ async function addCoverPage(finalDoc, data, productTitle) {
   const who =
     [data?.firstName, data?.middleName, data?.lastName].filter(Boolean).join(" ") ||
     [data?.spouseA, data?.spouseB].filter(Boolean).join(" ");
-  if (who) page.drawText(`Filer: ${who}`, { x: 56, y: 675, size: 11, font: font2 });
+  if (who) {
+    page.drawText(`Filer: ${who}`, { x: 56, y: 675, size: 11, font: font2 });
+  }
 
   page.drawText("Checklist:", { x: 56, y: 640, size: 12, font });
-  ["Bring government ID and required filing fees.",
-   "If required, fingerprints/FDLE completed.",
-   "Sign notarized pages in front of a notary.",
-   "Leave Case No. blank until assigned by Clerk."]
-   .forEach((b, i) => page.drawText(`• ${b}`, { x: 56, y: 620 - i * 16, size: 11, font: font2 }));
+  [
+    "Bring government ID and required filing fees.",
+    "If required, fingerprints/FDLE completed.",
+    "Sign notarized pages in front of a notary.",
+    "Leave Case No. blank until assigned by Clerk."
+  ].forEach((b, i) =>
+    page.drawText(`• ${b}`, { x: 56, y: 620 - i * 16, size: 11, font: font2 })
+  );
 
   const [coverPage] = await finalDoc.copyPages(cover, [0]);
   finalDoc.addPage(coverPage);
@@ -77,49 +98,95 @@ async function addCoverPage(finalDoc, data, productTitle) {
 
 export async function POST(req) {
   try {
-    const { productKey, data, matterId } = await req.json().catch(() => ({}));
-    if (!productKey) {
-      return NextResponse.json({ error: "Missing productKey" }, { status: 400 });
-    }
+    const body = await req.json().catch(() => ({}));
+    let { productKey, data, matterId } = body;
 
-    const cfg = PACKETS[productKey];
-    if (!cfg) {
-      return NextResponse.json({ error: `Unknown packet: ${productKey}` }, { status: 400 });
-    }
-    if (!Array.isArray(cfg.files) || cfg.files.length === 0) {
-      return NextResponse.json({ error: "Packet has no files" }, { status: 400 });
-    }
-
-    // test bypass so you can build without payment during dev
+    // Test bypass: allow dev builds using body data + TEST/TEST-BYPASS matterId
     const BYPASS =
       process.env.NEXT_PUBLIC_DOCUDOCKET_ALLOW_TEST === "1" &&
       (matterId === "TEST" || matterId === "TEST-BYPASS");
 
+    let packetData = data || {};
+    let packetKey = productKey;
+
     if (!BYPASS) {
+      // Real flow: load the matter from Supabase and verify payment
       if (!matterId) {
-        return NextResponse.json({ error: "Missing matterId" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Missing matterId" },
+          { status: 400 }
+        );
       }
-      const { data: matters, error } = await supabase
+
+      const { data: rows, error } = await supabase
         .from("matters")
-        .select("paid")
+        .select("product_key, data, paid")
         .eq("id", matterId)
         .limit(1);
-      if (error) return NextResponse.json({ error: `Supabase error: ${error.message}` }, { status: 500 });
-      if (!matters?.[0]?.paid) {
-        return NextResponse.json({ error: "Payment required" }, { status: 403 });
+
+      if (error) {
+        return NextResponse.json(
+          { error: `Supabase error: ${error.message}` },
+          { status: 500 }
+        );
       }
+
+      const row = rows?.[0];
+
+      if (!row) {
+        return NextResponse.json(
+          { error: "Matter not found" },
+          { status: 404 }
+        );
+      }
+
+      if (!row.paid) {
+        return NextResponse.json(
+          { error: "Payment required" },
+          { status: 403 }
+        );
+      }
+
+      packetKey = row.product_key;
+      packetData = row.data || {};
+    }
+
+    if (!packetKey) {
+      return NextResponse.json(
+        { error: "Missing productKey" },
+        { status: 400 }
+      );
+    }
+
+    const cfg = PACKETS[packetKey];
+    if (!cfg) {
+      return NextResponse.json(
+        { error: `Unknown packet: ${packetKey}` },
+        { status: 400 }
+      );
+    }
+
+    const files = (cfg.files || []).filter(
+      (f) => !f.include || f.include(packetData)
+    );
+
+    if (files.length === 0) {
+      return NextResponse.json(
+        { error: "Packet has no files" },
+        { status: 400 }
+      );
     }
 
     const finalDoc = await PDFDocument.create();
 
-    // Add cover page (make non-fatal if it throws)
-    try { await addCoverPage(finalDoc, data || {}, cfg.title || "DocuDocket Packet"); }
-    catch (e) {
+    // Cover page (non-fatal if it fails)
+    try {
+      await addCoverPage(finalDoc, packetData, cfg.title || "DocuDocket Packet");
+    } catch (e) {
       console.error("COVER_ERROR:", e?.message);
-      // continue anyway
     }
 
-    for (const file of cfg.files) {
+    for (const file of files) {
       let baseBytes;
       try {
         baseBytes = await readTemplateBytes(file.path);
@@ -135,7 +202,7 @@ export async function POST(req) {
       const mapping = cfg.fields?.[file.id];
       if (mapping) {
         try {
-          outBytes = await fillForm(baseBytes, mapping, data || {});
+          outBytes = await fillForm(baseBytes, mapping, packetData);
         } catch (e) {
           console.error("FILL_ERROR:", file.id, e?.message);
           return NextResponse.json(
@@ -158,17 +225,21 @@ export async function POST(req) {
       }
     }
 
-    // page numbers
+    // page numbers (non-fatal)
     try {
       const font = await finalDoc.embedFont(StandardFonts.Helvetica);
       const pages = finalDoc.getPages();
       pages.forEach((p, i) => {
         const { width } = p.getSize();
-        p.drawText(`${i + 1} / ${pages.length}`, { x: width - 70, y: 18, size: 9, font });
+        p.drawText(`${i + 1} / ${pages.length}`, {
+          x: width - 70,
+          y: 18,
+          size: 9,
+          font
+        });
       });
     } catch (e) {
       console.error("FOOTER_ERROR:", e?.message);
-      // non-fatal
     }
 
     const bytes = await finalDoc.save();
@@ -176,11 +247,14 @@ export async function POST(req) {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="DocuDocket_${productKey}.pdf"`
+        "Content-Disposition": `attachment; filename="DocuDocket_${packetKey}.pdf"`
       }
     });
   } catch (e) {
     console.error("BUILD_FATAL:", e?.message, e?.stack);
-    return NextResponse.json({ error: `Failed to build packet: ${e?.message || "unknown"}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Failed to build packet: ${e?.message || "unknown"}` },
+      { status: 500 }
+    );
   }
 }
