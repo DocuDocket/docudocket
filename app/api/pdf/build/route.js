@@ -20,13 +20,33 @@ const readTemplateBytes = async (relPath) => {
 };
 
 // helper: fill a form’s fields using pdf-lib and our mapping
+// supports mappings that return:
+//  - string/boolean (normal)
+//  - { value, fontSize, padLeft } for tighter layout control
 async function fillForm(baseBytes, fieldMap, data) {
   const pdf = await PDFDocument.load(baseBytes);
   const form = pdf.getForm?.();
 
   if (form) {
     for (const [fieldName, mapping] of Object.entries(fieldMap || {})) {
-      const value = typeof mapping === "function" ? mapping(data) : data?.[mapping];
+      const raw =
+        typeof mapping === "function" ? mapping(data) : data?.[mapping];
+
+      // allow mapping to return { value, fontSize, padLeft }
+      let value = raw;
+      let fontSize = null;
+      let padLeft = 0;
+
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        value = raw.value ?? raw.text ?? "";
+        fontSize = raw.fontSize ?? null;
+        padLeft = raw.padLeft ?? 0;
+      }
+
+      // simple spacing nudge if requested
+      if (padLeft && value != null) {
+        value = `${" ".repeat(padLeft)}${value}`;
+      }
 
       // checkbox
       try {
@@ -41,6 +61,7 @@ async function fillForm(baseBytes, fieldMap, data) {
       try {
         const tf = form.getTextField(fieldName);
         if (tf) {
+          if (fontSize) tf.setFontSize(fontSize);
           if (value != null && value !== "") {
             tf.setText(String(value));
           }
@@ -206,7 +227,11 @@ export async function POST(req) {
         } catch (e) {
           console.error("FILL_ERROR:", file.id, e?.message);
           return NextResponse.json(
-            { error: `Failed filling fields for ${file.id}: ${e?.message || "unknown"}` },
+            {
+              error: `Failed filling fields for ${file.id}: ${
+                e?.message || "unknown"
+              }`
+            },
             { status: 500 }
           );
         }
