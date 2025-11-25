@@ -19,36 +19,31 @@ const readTemplateBytes = async (relPath) => {
   return fs.readFile(abs);
 };
 
+// normalize mapping output -> { value, fontSize? }
+const normalizeValue = (raw, data) => {
+  const v = typeof raw === "function" ? raw(data) : data?.[raw];
+
+  // allow { value, fontSize }
+  if (v && typeof v === "object" && "value" in v) {
+    return {
+      value: v.value,
+      fontSize: v.fontSize
+    };
+  }
+
+  return { value: v, fontSize: undefined };
+};
+
 // helper: fill a form’s fields using pdf-lib and our mapping
-// supports mappings that return:
-//  - string/boolean (normal)
-//  - { value, fontSize, padLeft } for tighter layout control
 async function fillForm(baseBytes, fieldMap, data) {
   const pdf = await PDFDocument.load(baseBytes);
   const form = pdf.getForm?.();
 
   if (form) {
     for (const [fieldName, mapping] of Object.entries(fieldMap || {})) {
-      const raw =
-        typeof mapping === "function" ? mapping(data) : data?.[mapping];
+      const { value, fontSize } = normalizeValue(mapping, data);
 
-      // allow mapping to return { value, fontSize, padLeft }
-      let value = raw;
-      let fontSize = null;
-      let padLeft = 0;
-
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-        value = raw.value ?? raw.text ?? "";
-        fontSize = raw.fontSize ?? null;
-        padLeft = raw.padLeft ?? 0;
-      }
-
-      // simple spacing nudge if requested
-      if (padLeft && value != null) {
-        value = `${" ".repeat(padLeft)}${value}`;
-      }
-
-      // checkbox
+      // 1) checkbox
       try {
         const cb = form.getCheckBox(fieldName);
         if (cb) {
@@ -57,23 +52,30 @@ async function fillForm(baseBytes, fieldMap, data) {
         }
       } catch {}
 
-      // text field
+      // 2) radio group
       try {
-        const tf = form.getTextField(fieldName);
-        if (tf) {
-          if (fontSize) tf.setFontSize(fontSize);
-          if (value != null && value !== "") {
-            tf.setText(String(value));
-          }
+        const rg = form.getRadioGroup(fieldName);
+        if (rg) {
+          if (value) rg.select(String(value));
           continue;
         }
       } catch {}
 
-      // radio group
+      // 3) text field
       try {
-        const rg = form.getRadioGroup(fieldName);
-        if (rg && value) {
-          rg.select(String(value));
+        const tf = form.getTextField(fieldName);
+        if (tf) {
+          // IMPORTANT: never write booleans into text fields (prevents "false")
+          if (typeof value === "boolean") continue;
+
+          if (value != null && value !== "") {
+            tf.setText(String(value));
+            if (fontSize) {
+              try {
+                tf.setFontSize(fontSize);
+              } catch {}
+            }
+          }
           continue;
         }
       } catch {}
@@ -122,7 +124,6 @@ export async function POST(req) {
     const body = await req.json().catch(() => ({}));
     let { productKey, data, matterId } = body;
 
-    // Test bypass: allow dev builds using body data + TEST/TEST-BYPASS matterId
     const BYPASS =
       process.env.NEXT_PUBLIC_DOCUDOCKET_ALLOW_TEST === "1" &&
       (matterId === "TEST" || matterId === "TEST-BYPASS");
@@ -131,12 +132,8 @@ export async function POST(req) {
     let packetKey = productKey;
 
     if (!BYPASS) {
-      // Real flow: load the matter from Supabase and verify payment
       if (!matterId) {
-        return NextResponse.json(
-          { error: "Missing matterId" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Missing matterId" }, { status: 400 });
       }
 
       const { data: rows, error } = await supabase
@@ -155,17 +152,11 @@ export async function POST(req) {
       const row = rows?.[0];
 
       if (!row) {
-        return NextResponse.json(
-          { error: "Matter not found" },
-          { status: 404 }
-        );
+        return NextResponse.json({ error: "Matter not found" }, { status: 404 });
       }
 
       if (!row.paid) {
-        return NextResponse.json(
-          { error: "Payment required" },
-          { status: 403 }
-        );
+        return NextResponse.json({ error: "Payment required" }, { status: 403 });
       }
 
       packetKey = row.product_key;
@@ -173,10 +164,7 @@ export async function POST(req) {
     }
 
     if (!packetKey) {
-      return NextResponse.json(
-        { error: "Missing productKey" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing productKey" }, { status: 400 });
     }
 
     const cfg = PACKETS[packetKey];
@@ -192,15 +180,11 @@ export async function POST(req) {
     );
 
     if (files.length === 0) {
-      return NextResponse.json(
-        { error: "Packet has no files" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Packet has no files" }, { status: 400 });
     }
 
     const finalDoc = await PDFDocument.create();
 
-    // Cover page (non-fatal if it fails)
     try {
       await addCoverPage(finalDoc, packetData, cfg.title || "DocuDocket Packet");
     } catch (e) {
@@ -227,11 +211,7 @@ export async function POST(req) {
         } catch (e) {
           console.error("FILL_ERROR:", file.id, e?.message);
           return NextResponse.json(
-            {
-              error: `Failed filling fields for ${file.id}: ${
-                e?.message || "unknown"
-              }`
-            },
+            { error: `Failed filling fields for ${file.id}: ${e?.message || "unknown"}` },
             { status: 500 }
           );
         }
